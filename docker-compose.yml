@@ -1,0 +1,84 @@
+services:
+  postgresql:
+    image: postgres:17.4
+    container_name: postgres
+    environment:
+      POSTGRES_USER_FILE: /run/secrets/pg_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_pw
+      POSTGRES_DB: postgres
+    secrets:
+      - pg_user
+      - pg_pw
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./data:/var/lib/postgresql/data
+      - ./log:/var/log/postgresql
+    command: >
+      postgres -c logging_collector=on
+               -c log_directory=/var/log/postgresql
+               -c log_filename=postgresql.log
+               -c log_statement=all
+               -c log_connections=on
+               -c log_disconnections=on
+               -c log_destination=stderr,csvlog
+               -c log_rotation_age=1d
+               -c shared_preload_libraries=pg_stat_statements
+               -c pg_stat_statements.track=all
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "user"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    depends_on:
+      - postgresql
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: root
+    restart: unless-stopped
+
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.7
+    container_name: kafka-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.7
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+
+secrets:
+  pg_user:
+    file: ./secrets/pg_user.txt
+  pg_pw:
+    file: ./secrets/pg_pw.txt
